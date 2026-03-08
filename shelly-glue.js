@@ -22,24 +22,6 @@ const CHUNK_SIZE = 50;
 const CHUNK_DELAY_MS = 200;
 const CHUNK_TIMEOUT = 0.5;
 
-// -- RING BUFFER --
-function RingBuffer(size) {
-  return { data: new Array(size), size: size, head: 0, count: 0 };
-}
-
-function rbPush(rb, sample) {
-  rb.data[rb.head] = sample;
-  rb.head = (rb.head + 1) % rb.size;
-  if (rb.count < rb.size) rb.count++;
-}
-
-function rbCopyTo(rb, target) {
-  let start = (rb.head - rb.count + rb.size) % rb.size;
-  for (let i = 0; i < rb.count; i++) {
-    target.push(rb.data[(start + i) % rb.size]);
-  }
-}
-
 // -- STATE --
 let preBuffer = RingBuffer(PRE_BUFFER_SIZE);
 let samples = [];
@@ -71,10 +53,7 @@ function sendNextChunk() {
   }
 
   let isLast = !eventActive && (end >= samples.length);
-  let chunk = "META," + eventStartTime + "," + (isLast ? "1" : "0") + "\n";
-  for (let i = 0; i < end; i++) {
-    chunk += samples[i] + "\n";
-  }
+  let chunk = buildChunk(samples, end, eventStartTime, isLast);
 
   if (DEBUG) print("Sending chunk | size:", end, "| final:", isLast);
 
@@ -120,19 +99,17 @@ function finalizeEvent() {
 Timer.set(SAMPLING_INTERVAL, true, function() {
   try {
     let raw = readVoltage();
-    filteredVoltage = filteredVoltage + ALPHA * (raw - filteredVoltage);
-    let voltage = filteredVoltage < NOISE_FLOOR ? 0 : filteredVoltage;
+    filteredVoltage = applyEMA(filteredVoltage, raw, ALPHA);
+    let voltage = applyNoiseFloor(filteredVoltage, NOISE_FLOOR);
     let now = Date.now();
 
-    let newState = signalState;
-    if (!signalState && voltage > ON_THRESHOLD) newState = true;
-    if (signalState && voltage < OFF_THRESHOLD) newState = false;
+    let newState = applyHysteresis(signalState, voltage, ON_THRESHOLD, OFF_THRESHOLD);
 
     if (DEBUG && newState !== signalState) {
       print("State:", signalState, "->", newState, "| V:", voltage);
     }
 
-    let sample = now + "," + voltage.toFixed(4);
+    let sample = buildSample(now, voltage);
 
     if (newState) {
       if (!eventActive) {

@@ -22,7 +22,7 @@ async function rpc(method, params) {
 
 async function deploy() {
 
-  const code = fs.readFileSync("./event-detector.js", "utf8");
+  const code = fs.readFileSync("./event-detector.bundle.js", "utf8");
 
   await rpc("Script.Stop", { id: SCRIPT_ID });
 
@@ -34,7 +34,8 @@ async function deploy() {
 
   await rpc("Script.Start", { id: SCRIPT_ID });
 
-  console.log("deploy complete");
+  const timestamp = new Date().toLocaleString("sv-SE", { timeZone: "America/La_Paz" });
+  console.log(`deploy complete - ${timestamp}`);
 }
 
 deploy();
