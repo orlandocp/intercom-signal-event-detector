@@ -20,6 +20,7 @@ const MAX_SAMPLES = Math.ceil(MAX_EVENT_DURATION / SAMPLING_INTERVAL) + PRE_BUFF
 // -- CONFIG: send --
 const CHUNK_SIZE = 50;
 const CHUNK_DELAY_MS = 200;
+const CHUNK_TIMEOUT = 0.5;
 
 // -- RING BUFFER --
 function RingBuffer(size) {
@@ -48,6 +49,9 @@ let lastActiveTime = 0;
 let signalState = false;
 let filteredVoltage = 0;
 let sendIndex = 0;
+let sending = false;
+let totalSamples = 0;
+let totalChunks = 0;
 
 // -- VOLTAGE --
 function readVoltage() {
@@ -61,33 +65,44 @@ function webhookPulse(v) {
 
 // -- SEND --
 function sendNextChunk() {
-  if (sendIndex >= samples.length) {
-    print("✅ All chunks sent |", samples.length, "samples");
-    samples = [];
-    sendIndex = 0;
+  let end = Math.min(CHUNK_SIZE, samples.length);
+  if (end === 0) {
+    sending = false;
     return;
   }
 
-  let end = Math.min(sendIndex + CHUNK_SIZE, samples.length);
-  let isLast = (end >= samples.length);
+  let isLast = !eventActive && (end >= samples.length);
   let chunk = "META," + eventStartTime + "," + (isLast ? "1" : "0") + "\n";
-  for (let i = sendIndex; i < end; i++) {
+  for (let i = 0; i < end; i++) {
     chunk += samples[i] + "\n";
   }
 
-  if (DEBUG) print("Sending chunk", sendIndex, "-", end);
+  if (DEBUG) print("Sending chunk | size:", end, "| final:", isLast);
 
   Shelly.call("HTTP.POST", {
     url: SERVER_URL,
     body: chunk,
-    timeout: 1.0
+    timeout: CHUNK_TIMEOUT
   }, function(result, error) {
     if (error) {
-      print("❌ Chunk error:", JSON.stringify(error));
+      print("❌ Chunk error — aborting event:", JSON.stringify(error));
+      samples = [];
+      sending = false;
+      eventActive = false;
     } else {
       if (DEBUG) print("Chunk ok:", result.code);
-      sendIndex = end;
-      Timer.set(CHUNK_DELAY_MS, false, sendNextChunk);
+      totalSamples += end;
+      totalChunks++;
+      samples.splice(0, end);
+      if (isLast) {
+        let duration = ((Date.now() - eventStartTime) / 1000).toFixed(1);
+        print("✅ All chunks sent | samples:", totalSamples, "| chunks:", totalChunks, "| duration:", duration, "s");
+        sending = false;
+      } else if (samples.length >= CHUNK_SIZE || !eventActive) {
+        Timer.set(CHUNK_DELAY_MS, false, sendNextChunk);
+      } else {
+        sending = false;
+      }
     }
   });
 }
@@ -95,9 +110,12 @@ function sendNextChunk() {
 // -- FINALIZE --
 function finalizeEvent() {
   if (samples.length === 0) return;
-  print("Event finalized |", samples.length, "samples");
+  print("🔶 Event finalized");
   sendIndex = 0;
-  sendNextChunk();
+  if (!sending) {
+    sending = true;
+    sendNextChunk();
+  }
 }
 
 // -- SAMPLING LOOP --
@@ -123,12 +141,19 @@ Timer.set(SAMPLING_INTERVAL, true, function() {
         print("🌟 Event started | V:", voltage);
         eventActive = true;
         samples = [];
+        totalSamples = 0;
+        totalChunks = 0;
         rbCopyTo(preBuffer, samples);
         eventStartTime = now;
       }
       samples.push(sample);
       lastActiveTime = now;
       if (DEBUG) print("Sample | V:", voltage, "| total:", samples.length);
+
+      if (!sending && samples.length >= CHUNK_SIZE) {
+        sending = true;
+        sendNextChunk();
+      }
 
     } else {
       if (eventActive) {
