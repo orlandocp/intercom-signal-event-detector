@@ -69,7 +69,8 @@ function sendNextChunk() {
   }
 
   let end = Math.min(sendIndex + CHUNK_SIZE, samples.length);
-  let chunk = "";
+  let isLast = (end >= samples.length);
+  let chunk = "META," + eventStartTime + "," + (isLast ? "1" : "0") + "\n";
   for (let i = sendIndex; i < end; i++) {
     chunk += samples[i] + "\n";
   }
