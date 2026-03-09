@@ -1,8 +1,8 @@
 // -- CONFIG: debug --
-const DEBUG = true;
+const DEBUG = false;
 
 // -- CONFIG: server --
-const SERVER_URL = "http://192.168.0.20:5000/buffer";
+const SERVER_URL = "http://192.168.0.11:5000/buffer";
 
 // -- CONFIG: sampling --
 const SAMPLING_INTERVAL = 50;
