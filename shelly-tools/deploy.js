@@ -1,52 +1,19 @@
 const fs = require("fs");
 
-const SHELLY_IP = "192.168.0.37";
+const {
+  checkShellyAlive,
+  getScriptStatus,
+  stopScript,
+  startScript,
+  uploadScript,
+  SHELLY_IP
+} = require("./shelly-client");
+
 const SCRIPT_ID = 1;
 
 const timestamp = new Date().toLocaleString("sv-SE", { timeZone: "America/La_Paz" });
 
-async function rpc(method, params) {
-
-  const res = await fetch(`http://${SHELLY_IP}/rpc`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      id: 1,
-      method,
-      params
-    })
-  });
-
-  const data = await res.json();
-
-  if (data.error) {
-    throw new Error(JSON.stringify(data.error));
-  }
-
-  return data.result;
-}
-
-async function checkShellyAlive() {
-
-  try {
-
-    const res = await fetch(`http://${SHELLY_IP}/rpc/Shelly.GetInfo`);
-    await res.json();
-
-    return true;
-
-  } catch (err) {
-
-    return false;
-
-  }
-
-}
-
 async function deploy() {
-
   console.log("");
   console.log("======================================");
   console.log(`Deploy started at: ${timestamp}`);
@@ -60,11 +27,9 @@ async function deploy() {
   const alive = await checkShellyAlive();
 
   if (!alive) {
-
     console.log("ERROR: Shelly device is not reachable.");
     console.log("Deploy aborted.");
     return;
-
   }
 
   console.log("Shelly is reachable");
@@ -72,7 +37,7 @@ async function deploy() {
 
   console.log("Fetching current script status...");
 
-  const statusBefore = await rpc("Script.GetStatus", { id: SCRIPT_ID });
+  const statusBefore = await getScriptStatus(SCRIPT_ID);
 
   console.log("Current script info:");
   console.log(JSON.stringify(statusBefore, null, 2));
@@ -87,22 +52,18 @@ async function deploy() {
   console.log("");
 
   console.log("Stopping script...");
-  await rpc("Script.Stop", { id: SCRIPT_ID });
+  await stopScript(SCRIPT_ID);
 
   console.log("Uploading new code...");
-  await rpc("Script.PutCode", {
-    id: SCRIPT_ID,
-    code,
-    append: false
-  });
+  await uploadScript(SCRIPT_ID, code);
 
   console.log("Starting script...");
-  await rpc("Script.Start", { id: SCRIPT_ID });
+  await startScript(SCRIPT_ID);
 
   console.log("");
   console.log("Checking final script status...");
 
-  const statusAfter = await rpc("Script.GetStatus", { id: SCRIPT_ID });
+  const statusAfter = await getScriptStatus(SCRIPT_ID);
 
   const green = "\x1b[32m";
   const red = "\x1b[31m";
@@ -117,14 +78,11 @@ async function deploy() {
   console.log("");
   console.log("Deploy finished");
   console.log("");
-
 }
 
 deploy().catch(err => {
-
   console.log("");
   console.log("DEPLOY FAILED");
   console.error(err);
   console.log("");
-
 });
