@@ -18,7 +18,8 @@ async function build() {
     mangle: false,
     format: {
       comments: false,
-      beautify: true
+      beautify: true,
+      indent_level: 2
     }
   });
 
