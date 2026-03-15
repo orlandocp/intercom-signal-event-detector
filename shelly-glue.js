@@ -6,15 +6,15 @@ const SERVER_URL = "http://192.168.0.11:5000/buffer";
 
 // -- CONFIG: sampling --
 const SAMPLING_INTERVAL = 50;
-const NOISE_FLOOR = 0.25;
-const ON_THRESHOLD = 0.30;
-const OFF_THRESHOLD = 0.20;
-const ALPHA = 0.2;
+const NOISE_FLOOR = 0.25; // Aqui hay un error, este valor era en base a experiencia de voltaje raw (observacion manual que se hizo, no estadística) y se lo esta usando luego de calcular el EMA
+const ON_THRESHOLD = 0.30; // Hay que sacar y poner este valores basado en muestras y observación real
+const OFF_THRESHOLD = 0.20; // Hay que sacar y poner este valores basado en muestras y observación real
+const ALPHA = 0.2; // Hay que sacar y poner este valores basado en muestras y observación real
 const PRE_BUFFER_SIZE = 20;
 
 // -- CONFIG: event --
-const EVENT_TIMEOUT = 2000;
-const MAX_EVENT_DURATION = 35000;
+const EVENT_TIMEOUT = 2000; // Hay que sacar y poner este valores basado en muestras y observación real
+const MAX_EVENT_DURATION = 35000;  // Hay que sacar y poner este valores basado en muestras y observación real
 const MAX_SAMPLES = Math.ceil(MAX_EVENT_DURATION / SAMPLING_INTERVAL) + PRE_BUFFER_SIZE;
 
 // -- CONFIG: send --
@@ -88,7 +88,10 @@ function sendNextChunk() {
 // -- FINALIZE --
 function finalizeEvent() {
   if (samples.length === 0) return;
+  // En este print estamos indicando que se finalizó el evento, pero que pasa si sending=true?
+  //  igual se ha finalizado aunque sending=true? no creo
   print("🔶 Event finalized");
+
   if (!sending) {
     sending = true;
     sendNextChunk();
@@ -98,10 +101,11 @@ function finalizeEvent() {
 // -- SAMPLING LOOP --
 Timer.set(SAMPLING_INTERVAL, true, function() {
   try {
+    let now = Date.now();
     let raw = readVoltage();
     filteredVoltage = applyEMA(filteredVoltage, raw, ALPHA);
     let voltage = applyNoiseFloor(filteredVoltage, NOISE_FLOOR);
-    let now = Date.now();
+    
 
     let newState = applyHysteresis(signalState, voltage, ON_THRESHOLD, OFF_THRESHOLD);
 
@@ -139,15 +143,35 @@ Timer.set(SAMPLING_INTERVAL, true, function() {
         let duration = now - eventStartTime;
         if (DEBUG) print("Idle:", idle, "| Duration:", duration);
 
+        // Realmente sirve el EVENT_TIMEOUT? cual es su objetivo? realmente en algún caso va a usarse?
+        // Realmente sirve el MAX_EVENT_DURATION? cual es su objetivo? realmente en algún caso va a usarse?
+        // Recordemos que el http.post tiene igual un time out en su configuracion
+        //  y cuando se excede este time out se aborta el evento
+        // Si nos sirven como protección en algun caso donde posiblemente ayuden
+        //   ahí podríamos dejarlos
         if (idle > EVENT_TIMEOUT || duration > MAX_EVENT_DURATION) {
           print("⏱️ Timeout | idle:", idle, "| duration:", duration);
           eventActive = false;
           finalizeEvent();
+        // Realmente sirve el MAX_SAMPLES? cual es su objetivo? realmente en algún caso va a usarse?
         } else if (samples.length >= MAX_SAMPLES) {
           print("⚠️ Max samples reached");
           eventActive = false;
           finalizeEvent();
         }
+        // Aqui quizá falta un else que igual fuerce el "finalize"? porque sino solo estará cerrando
+        // cuando hay EVENT_TIMEOUT, MAX_EVENT_DURATION o MAX_SAMPLES, y si no se cumple ninguna
+        // de esas condiciones sigue guardando samples y se supone que en este punto el newState cambió a off por lo que eso deberia ser sufiente para considerar el evento cerrado.. o me equivoco y quiza estoy olvidando algo?. Hay alguna razón para que esperemos a que
+        //  si o si se espere que se cumplan las condiciones EVENT_TIMEOUT, MAX_EVENT_DURATION
+        //  o MAX_SAMPLES? Quizá esta asi porque captura el trailing edge y que aprox son 40ticks mas que se guarda, pero es necesario?
+        // Luego dijiste que "Los ticks del timeout window (40 ticks × 0V) van al CSV — es correcto para el análisis del trailing edge, pero el Analyzer necesita saber que esos ceros finales no son señal sino espera de timeout. No hay ningún marcador en el CSV que indique dónde terminó la señal activa y empezó el timeout. Esto afectará el análisis futuro." Sin embargo analiza si realmente vale la pena mantenerlos y como indicariamos eso al mandar datos al servidor.
+
+        // dijiste esto:
+        // - `MAX_EVENT_DURATION = 35000ms`
+        //- `MAX_SAMPLES = 720`
+        //- A 50ms/sample: 720 samples = 36000ms
+        // se suponia que el MAX_SAMPLES deberia cerrar primero y en ultima instancia el MAX_EVENT_DURATION
+        // pero incluso antes que todos ellos si el voltaje ya bajo a 0, o esta el state en off y bajo del OFF_THRESHOLD o el NOISE_FLOOR (habria que definir cual) entonces ya deberiamos dar por terminado el evento directo y no esperar nada mas
       }
     }
 
@@ -160,3 +184,11 @@ Timer.set(SAMPLING_INTERVAL, true, function() {
 });
 
 print("🚀 VHunter started | url:", SERVER_URL, "| interval:", SAMPLING_INTERVAL, "ms");
+
+// Por otra parte necesitamos calcular bien cuales seran los valores de los siguiente basado en datos reales observados, quiza necesitaras definir otros algoritmos aparte de este (separados) para dicho propósito y guardar la informacion necesaria igual en archivos para analizarla?:
+// NOISE_FLOOR
+// ON_THRESHOLD
+// OFF_THRESHOLD
+// ALPHA
+// EVENT_TIMEOUT
+// MAX_EVENT_DURATION

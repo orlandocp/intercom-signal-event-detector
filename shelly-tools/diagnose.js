@@ -4,7 +4,7 @@ const {
   SHELLY_IP
 } = require("./shelly-client");
 
-const SCRIPT_ID = 1;
+const SCRIPT_ID = 2;
 
 const green = "\x1b[32m";
 const yellow = "\x1b[33m";
