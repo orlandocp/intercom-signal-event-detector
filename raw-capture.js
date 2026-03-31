@@ -15,7 +15,6 @@ let samples = [];
 let sending = false;
 let totalSamples = 0;
 let totalChunks = 0;
-let isFirstChunk = true;
 
 // -- VOLTAGE --
 function readVoltage() {
@@ -30,14 +29,7 @@ function sendNextChunk() {
     return;
   }
 
-  // On the very first chunk, prepend a RESTART marker so the server
-  // knows this is a fresh start of the capture script
   let chunk = "";
-  if (isFirstChunk) {
-    chunk += "RESTART," + samples[0].split(",")[0] + "\n";
-    isFirstChunk = false;
-  }
-
   for (let i = 0; i < end; i++) {
     chunk += samples[i] + "\n";
   }
@@ -49,8 +41,6 @@ function sendNextChunk() {
   }, function(result, error) {
     if (error) {
       print("❌ Chunk error:", JSON.stringify(error));
-      // Reset isFirstChunk so the RESTART marker is sent again on next attempt
-      isFirstChunk = true;
       sending = false;
     } else {
       totalSamples += end;
